@@ -1,0 +1,294 @@
+services:
+# Run these before starting the docker
+#OVPN_DATA=ovpn-data
+#docker volume create --name $OVPN_DATA
+#docker run -v $OVPN_DATA:/etc/openvpn --rm kylemanna/openvpn ovpn_genconfig -u udp://it-t.fr
+#docker run -v $OVPN_DATA:/etc/openvpn --rm -it kylemanna/openvpn ovpn_initpki
+
+# Make a new client
+#docker run -v $OVPN_DATA:/etc/openvpn --rm -it openvpn:v2 easyrsa build-client-full CLIENTNAME nopass
+#docker run -v $OVPN_DATA:/etc/openvpn --rm openvpn:v2 ovpn_getclient CLIENTNAME > CLIENTNAME.ovpn
+  openvpn:
+    build:
+      context: ./openvpn
+      dockerfile: Dockerfile
+    image: openvpn:v2
+    pull_policy: never
+    container_name: openvpn
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "1194:1194/udp"
+    volumes:
+      - ovpn-data:/etc/openvpn
+#      - ovpn-bin:/usr/local/bin
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.0.254
+    restart: always
+    profiles:
+      - openvpn
+
+  #dns:
+    #restart: always
+    #image: strm/dnsmasq
+    #volumes:
+      #- ./dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf
+    #ports:
+      #- "127.0.0.1:53:53/udp"
+    #networks:
+      #- vpn_network:
+        #ipv4_address: 172.20.0.253
+    #cap_add:
+      #- NET_ADMIN
+
+  apache:
+    build:
+      context: ./apache
+      dockerfile: Dockerfile
+#    image: php:apache
+    container_name: apache
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/www/html:/var/www/html
+      - /etc/letsencrypt/live/it-techs.fr:/etc/letsencrypt/live/it-techs.fr
+      - /etc/letsencrypt/archive/it-techs.fr:/etc/letsencrypt/archive/it-techs.fr
+      - /etc/letsencrypt/keys:/etc/letsencrypt/keys
+      - ./apache/000-default.conf:/etc/apache2/sites-available/000-default.conf
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.0.2
+    restart: always
+    profiles:
+      - web
+
+  mysql:
+    image: mariadb:latest
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: your_mysql_root_password
+      MYSQL_DATABASE: your_database_name
+      MYSQL_USER: your_mysql_user
+      MYSQL_PASSWORD: your_mysql_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.0.3
+    restart: always
+    profiles:
+      - web
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: phpmyadmin
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      PMA_HOST: mysql
+      MYSQL_ROOT_PASSWORD: your_mysql_root_password
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.0.4
+    restart: always
+    profiles:
+      - web
+
+
+  planka:
+    image: ghcr.io/plankanban/planka:latest
+    restart: on-failure
+    volumes:
+      - planka-data:/app
+      - planka-user-avatars:/app/public/user-avatars
+      - planka-project-background-images:/app/public/project-background-images
+      - planka-attachments:/app/private/attachments
+    ports:
+      - "127.0.0.1:1337:1337"
+    environment:
+      - BASE_URL=https://planka.it-techs.fr
+      - DATABASE_URL=postgresql://postgres@postgres/planka
+      - SECRET_KEY=notsecretkey
+      - DEFAULT_ADMIN_EMAIL=root
+      - DEFAULT_ADMIN_PASSWORD=root
+      - DEFAULT_ADMIN_NAME=root
+      - DEFAULT_ADMIN_USERNAME=root
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.0.5
+    profiles:
+      - pw
+
+  wiki:
+    image: ghcr.io/requarks/wiki:2
+    depends_on:
+      - postgres
+    environment:
+      ADMIN_EMAIL: root@admin.com
+      ADMIN_PASS: root
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: P0stgr3s_P@ssw0rd_123
+      DB_NAME: wiki
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - wiki-data:/wiki
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.0.6
+    profiles:
+      - pw
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wiki
+      POSTGRES_PASSWORD: P0stgr3s_P@ssw0rd_123
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    logging:
+      driver: "none"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d planka"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.0.7
+    profiles:
+      - pw
+
+
+
+  gaia-planka:
+    image: ghcr.io/plankanban/planka:latest
+    restart: on-failure
+#    volumes:
+#      - gaia-planka-data:/app
+#      - gaia-planka-user-avatars:/app/public/user-avatars
+#      - gaia-planka-project-background-images:/app/public/project-background-images
+#      - gaia-planka-attachments:/app/private/attachments
+    ports:
+      - "127.0.0.1:3000:1337"
+    environment:
+      - BASE_URL=http://172.20.1.1:1337
+      - DATABASE_URL=postgresql://postgres@postgres/planka
+      - SECRET_KEY=notsecretkey
+      - DEFAULT_ADMIN_EMAIL=root # Do not remove if you want to prevent this user from being edited/deleted
+      - DEFAULT_ADMIN_PASSWORD=root
+      - DEFAULT_ADMIN_NAME=root
+      - DEFAULT_ADMIN_USERNAME=root
+    depends_on:
+      gaia-postgres:
+        condition: service_healthy
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.1.1
+    profiles:
+      - gaia
+
+
+
+  gaia-wiki:
+    image: ghcr.io/requarks/wiki:latest
+    depends_on:
+      - gaia-postgres
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: G@1a_P0stgr3s
+      DB_NAME: wiki
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+#    volumes:
+#      - gaia-wiki-data:/wiki
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.1.2
+    profiles:
+      - gaia
+
+  gaia-postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wiki
+      POSTGRES_PASSWORD: G@1a_P0stgr3s
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    logging:
+      driver: "none"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d planka"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+#      - gaia-postgres_data:/var/lib/postgresql/data
+      - ./gaia/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    networks:
+      vpn_network:
+        ipv4_address: 172.20.1.3
+    profiles:
+      - gaia
+
+volumes:
+  mysql_data:
+    name: mysql-data
+  ovpn-data:
+    name: ovpn-data
+  ovpn-bin:
+    name: ovpn-bin
+  planka-data:
+    name: planka-data
+  planka-user-avatars:
+    name: planka-user-avatars
+  planka-project-background-images:
+    name: planka-project-background-images
+  planka-attachments:
+    name: planka-attachments
+  wiki-data:
+    name: wiki-data
+  postgres_data:
+    name: postgres_data
+
+#  gaia-planka-data:
+#    name: gaia-planka-data
+#  gaia-planka-user-avatars:
+#    name: gaia-planka-user-avatars
+#  gaia-planka-project-background-images:
+#    name: gaia-planka-project-background-images
+#  gaia-planka-attachments:  
+#    name: gaia-planka-attachments
+#  gaia-wiki-data: 
+#    name: gaia-wiki-data
+#  gaia-postgres_data:
+#    name: gaia-postgres_data
+    
+
+networks:
+  vpn_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+#    driver: bridge
+#    external: false

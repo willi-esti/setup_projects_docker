@@ -1,0 +1,5 @@
+{
+    "require": {
+        "decole/planka-php-sdk": "^1.1"
+    }
+}

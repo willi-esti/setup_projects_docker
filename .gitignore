@@ -1,0 +1,7 @@
+backup/
+certificates/
+containerd/
+httpd/openvpn/OVPN
+httpd/gaia
+scripts/planka-api-php/vendor/
+vault/
