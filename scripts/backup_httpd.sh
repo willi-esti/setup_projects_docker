@@ -76,48 +76,18 @@ for i in $(ls -r $backup_dir/); do
     fi
 done
 
-# Attempt to list the Google Drive accounts
-account=$(/usr/local/bin/gdrive account list 2>&1)
+# Paths
+LOG_FILE="/path/to/upload.log"
+ERROR_LOG="/path/to/error.log"
 
-# Check if the list command was successful
-if [[ $? -ne 0 ]]; then
-    echo "gdrive account list failed. Importing account configuration..."
-    /usr/local/bin/gdrive account import /opt/backup/conf/gdrive_export-it_techs_fr_gmail_com.tar
+# Execute rclone command
+/usr/bin/rclone copy "$backup_dir/backup_$today.tgz" "drive:/httpd_backup" --log-file=/opt/logs/rclone_info.log --log-level=INFO 2>> /opt/logs/rclone_error.log
 
-    # Check if the import was successful
-    if [[ $? -eq 0 ]]; then
-        echo "Account configuration imported successfully."
-    else
-    echo "Failed to import account configuration."
+# Check the exit code
+if [ $? -ne 0 ]; then
+    echo "rclone command failed. Check logs for details."
     exit 1
-fi
 else
-    echo "gdrive account list succeeded. Uploading to Gdrive:"
-    
-    file_id=$(/usr/local/bin/gdrive files upload "$backup_dir/backup_$today.tgz" | grep -i 'id' | awk '{print $2}' | head -n 1)
-
-
-    # Check if the upload was successful
-    if [[ $? -eq 0 ]]; then
-        echo "Backup uploaded successfully. file_id = $file_id"
-        
-        # Move the backup file to a different directory on Google Drive
-        /usr/local/bin/gdrive files move "$file_id" "1aQPAOOVLlErhy4cR_QkcGLhbYYRoqxBs"
-        
-        # Check if the move was successful
-        if [[ $? -eq 0 ]]; then
-            echo "Backup moved successfully."
-        else
-            echo "Failed to move httpd_backup."
-            exit 1
-        fi
-    else
-        echo "Failed to upload backup."
-        exit 1
-    fi
+    echo "rclone command succeeded."
+    exit 0
 fi
-
-
-
-
-echo "Backup process completed successfully."

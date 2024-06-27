@@ -1,3 +1,13 @@
+# Rclone
+
+`apt install rclone`
+
+`rclone config`
+
+Name it drive (for the backup script )
+
+
+
 
 # PHP
 
@@ -18,8 +28,8 @@
 to deactivate
 `deactivate`
 
-`wget https://github.com/hwelch-fle/plankapy/archive/refs/heads/master.zip
-pip install requests
-`
+`wget https://github.com/hwelch-fle/plankapy/archive/refs/heads/master.zip`
+
+`pip install requests`
 
 
